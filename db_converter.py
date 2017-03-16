@@ -13,9 +13,19 @@ import sys
 import os
 import time
 import subprocess
+import argparse
+
+def parse(vargs):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input", help="MySQL input dump")
+    parser.add_argument("output", help="PostgreSQL output dump")
+    parser.add_argument("--remove-comments", action="store_true", dest="remove_comments", help="removes comments from DDL statements")
+    parser.add_argument("--remove-defaults", action="store_true", dest="remove_defaults",help="removes defaults from DDL statements")
+    args = parser.parse_args()
+    convert(args.input, args.output, args.remove_comments, args.remove_defaults)
 
 
-def parse(input_filename, output_filename):
+def convert(input_filename, output_filename, remove_comments, remove_defaults):
     "Feed it a file, and it'll output a fixed one"
 
     # State storage
@@ -74,6 +84,14 @@ def parse(input_filename, output_filename):
         if line.startswith("--") or line.startswith("/*") or line.startswith("LOCK TABLES") or line.startswith("DROP TABLE") or line.startswith("UNLOCK TABLES") or not line:
             continue
 
+        # remove comments of columns e.g. : "id" int(11) DEFAULT NULL COMMENT 'This is the id'
+        if remove_comments:
+            line = re.sub(r"COMMENT\s\'[^']+'", "", line.decode("utf8"))
+
+        # ignore defaults
+        if remove_defaults:
+            line = re.sub(r"DEFAULT\s[^,]+,", "", line.decode("utf8"))
+
         # Outside of anything handling
         if current_table is None:
             # Start of a table creation statement?
@@ -113,10 +131,12 @@ def parse(input_filename, output_filename):
                 if type.startswith("tinyint("):
                     type = "int4"
                     set_sequence = True
-                    final_type = "boolean"
                 elif type.startswith("int("):
                     type = "integer"
                     set_sequence = True
+                elif type.startswith("mediumint("):
+		    type = "integer"
+		    set_sequence = True
                 elif type.startswith("bigint("):
                     type = "bigint"
                     set_sequence = True
@@ -222,4 +242,4 @@ def parse(input_filename, output_filename):
 
 
 if __name__ == "__main__":
-    parse(sys.argv[1], sys.argv[2])
+    parse(sys.argv[1:])
